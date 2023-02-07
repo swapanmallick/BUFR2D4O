@@ -1,0 +1,83 @@
+#!/bin/bash
+#BSUB -L /bin/bash
+#BSUB -n 36
+#BSUB -R "span[ptile=36]"
+#BSUB -q p_medium
+#BSUB -W 04:00
+#BSUB -P R000
+#BSUB -x
+#BSUB -J d4o_prep
+#BSUB -o d4o_prep.out
+#BSUB -e d4o_prep.err
+#set -x
+#
+set -eu
+source /usr/share/Modules/init/bash
+source /users_home/csp/${USER}/load-modules-d4o.zeus
+source /data/csp/${USER}/d4o/install/INTEL/source.me
+#
+module -t list
+
+#-----------------------------------------------------------------------
+# Script BUFR to D4O OBS PRORCESS
+#-----------------------------------------------------------------------
+# USER INPUT
+#
+EVENT=201904
+#
+YYYY=`echo $EVENT | cut -c1-4`
+MM=`echo $EVENT | cut -c5-6`
+echo "YEAR "$YYYY
+echo "MONTH" $MM
+###INPUTDIR=/data/csp/sm09722/BIG-DATA
+INPUTDIR=/data/csp/ss35621/BIG-DATA
+SCRIPTDIR=/work/csp/sm09722/b2d4o
+WORKDIR=/work/csp/sm09722/b2d4o
+#
+for DD in 05; do
+##for DD in {01..02}; do
+   mkdir -p ${WORKDIR}/${YYYY}/${MM}
+   cd ${WORKDIR}/${YYYY}/${MM}
+   for UTC in 06 ; do
+   ##for UTC in 00 06 12 18; do
+   #
+     mkdir -p ${YYYY}${MM}${DD}${UTC}/
+     cd ${YYYY}${MM}${DD}${UTC}
+     ln -sf ${INPUTDIR}/${YYYY}${MM}${DD}${UTC}/* ./
+     #
+     BASETIME=${YYYY}${MM}${DD}${UTC}
+     rc=0
+     tslots="1-13"
+     npes=$LSB_MAX_NUM_PROCESSORS
+     bjobs -l $LSB_JOBID | perl -pe 's/^\s+//; s/\n//'
+    #((npools=npes/6)) # zeus : 36 / 6
+     npools=6
+     parallel=1  # 0
+     ##(set -x ; time bufr2d4o bufr $npools $parallel --camfv --basetime=$BASETIME --ens=3 --thinning=4 --psplit=$tslots --deferens) > output.log 2>&1 || rc=$?
+     (set -x ; time bufr2d4o bufr $npools $parallel --camfv --basetime=$BASETIME --ens=3 --thinning=16 --psplit=$tslots --deferens) > output.log 2>&1 || rc=$?
+     (set -x; time catalogd4o catalog.db "bufr*.db") >> output.log 2>&1 || rc=$?
+#
+    if [[ 0 -eq 1 ]] ; then # NOT executed since 0 != 1
+        tslots="1-13"
+        (set -x; time d4osplit parallel=1 ens=3 $tslots "bufr*.db") >> output.log 2>&1 || rc=$?
+    fi
+
+    # Create catalog databases under each timeslot dir
+
+    for ts in {1..13}
+    do 
+        d=TS$ts
+        if [[ -d $d ]] ; then
+            cd $d
+            (set -x; time catalogd4o catalog.db "bufr*.db") >> output.log 2>&1 || rc=$?
+            cd -
+        fi
+    done
+
+    cd - # back to previous dir
+   ##
+   echo "END UTC" $UTC
+   done
+#    
+done
+#
