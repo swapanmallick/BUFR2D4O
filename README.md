@@ -1,6 +1,5 @@
 # BUFR2D4O
 # STEP-1: 
-   Copy /work/csp/sm09722/b2d4o/D4O_PREPROCESS.job 
     D4O_PREPROCESS.job is the main script to submit a job
 
 # STEP-2:
