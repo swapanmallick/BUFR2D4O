@@ -5,7 +5,7 @@
 
 # STEP-2:
     > bsub <  D4O_PREPROCESS.job
- If everything is good and Zeus works appropriately. It will create a folder inside the same directory.
+ If everything is good. It will create a folder inside the same directory.
 
  YYYY/MM/YYYYMMDDHR/*
    And you can see all the files inside the same folder, TS* all.
