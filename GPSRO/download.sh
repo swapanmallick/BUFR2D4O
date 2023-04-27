@@ -12,8 +12,5 @@
  set YYYY = 2017
  set MM = 10
  #
- echo "Hi Swapan 2xdpxQ"
 wget -rN -np -A'*201710*' --user="Swapan Mallick" --ask-password https://www.romsaf.org/pub/icdr/v1-series/profs/metop/bfr/2017
-##wget -rN -np -A'201710' --user="Swapan Mallick" --ask-password https://www.romsaf.org/pub/icdr/v1-series/profs/metop/bfr/${YYYY}
- #wget -rN -np -A'*201810*' --user="Swapan Mallick" --ask-password https://www.romsaf.org/pub/icdr/v1-series/profs/metop/bfr/2018
 
