@@ -1,0 +1,156 @@
+#!/bin/bash
+#BSUB -L /bin/bash
+#BSUB -n 36
+#BSUB -R "span[ptile=36]"
+#BSUB -q p_medium
+#BSUB -W 04:00
+#BSUB -P R000
+#BSUB -x
+#BSUB -J d4o_prep_AMSU1
+#BSUB -o d4o_prep.out
+#BSUB -e d4o_prep.err
+#set -x
+#
+set -eu
+source /usr/share/Modules/init/bash
+source /users_home/csp/${USER}/load-modules-d4o.zeus
+source /data/csp/${USER}/d4o/install/INTEL/source.me
+#
+module -t list
+
+#-----------------------------------------------------------------------
+# Script BUFR to D4O OBS PRORCESS
+#-----------------------------------------------------------------------
+# USER INPUT
+#
+EVENT=201710
+EXP=AMSU
+#
+INPUTDIR=/data/csp/${USER}/OBS_ECMAR
+SCRIPTDIR=/work/csp/${USER}/ALL_D4O/b2d4o_${EXP}
+WORKDIR=/work/csp/${USER}/ALL_D4O/b2d4o_${EXP}
+#
+YYYY=`echo $EVENT | cut -c1-4`
+MM=`echo $EVENT | cut -c5-6`
+echo "YEAR "$YYYY
+echo "MONTH" $MM
+#
+for DD in 03 ; do
+##for DD in {15..20}; do
+    #for UTC in 00 ; do
+    for UTC in 12; do
+    ##for UTC in 06 12 18; do
+        #
+        rm -rf ${WORKDIR}/${YYYY}/${MM}/${YYYY}${MM}${DD}${UTC}/*
+	mkdir -p ${WORKDIR}/${YYYY}/${MM}/${YYYY}${MM}${DD}${UTC}
+	cd  ${WORKDIR}/${YYYY}/${MM}/${YYYY}${MM}${DD}${UTC}
+	#
+	##for bufrin in SND ; do
+	for bufrin in AMSU; do
+	##for bufrin in ARC AMV SND AMSU; do
+        #
+        #----6HR DATA ARRANGE  (+/- 3HR) ----
+        #
+        if [ ${UTC} = 00 ]; then
+           #
+           if [ ${DD} -ge 11 ]; then
+               DDP=$((DD-1))
+           else
+               ##DDP=08
+               DDP='0'$((DD-1))
+           fi
+           #
+           file1=${INPUTDIR}/${YYYY}/${MM}/${DDP}/${bufrin}_2100.bufr
+           file2=${INPUTDIR}/${YYYY}/${MM}/${DD}/${bufrin}_0000.bufr
+           cat ${file1} ${file2}  > ${bufrin}
+        elif [ ${UTC} = 06 ]; then
+           file1=${INPUTDIR}/${YYYY}/${MM}/${DD}/${bufrin}_0300.bufr
+           file2=${INPUTDIR}/${YYYY}/${MM}/${DD}/${bufrin}_0600.bufr
+           cat ${file1} ${file2}  > ${bufrin}
+        elif [ ${UTC} = 12 ]; then
+           file1=${INPUTDIR}/${YYYY}/${MM}/${DD}/${bufrin}_0900.bufr
+           file2=${INPUTDIR}/${YYYY}/${MM}/${DD}/${bufrin}_1200.bufr
+           cat ${file1} ${file2}  > ${bufrin}
+        elif [ ${UTC} = 18 ]; then
+           file1=${INPUTDIR}/${YYYY}/${MM}/${DD}/${bufrin}_1500.bufr
+           file2=${INPUTDIR}/${YYYY}/${MM}/${DD}/${bufrin}_1800.bufr
+           cat ${file1} ${file2}  > ${bufrin}
+        fi
+        echo "SWAPAN1"${file1}
+        echo "SWAPAN2"${file2}
+#-----------------------------------
+	BASETIME=${YYYY}${MM}${DD}${UTC}
+	rc=0
+	tslots="1-13"
+	npes=$LSB_MAX_NUM_PROCESSORS
+	bjobs -l $LSB_JOBID | perl -pe 's/^\s+//; s/\n//'
+	errfile=$(pwd)/errfile.$$
+	cat /dev/null > $errfile
+        #
+#-----------------------------------
+            if [ ${bufrin} = ARC ]; then
+		THINSM=4
+		npools=4 # a guess
+	        parallel=1  # 0
+		kinds="--target_kinds=20-23" # please see kindmap.camfv.txt
+            elif [ ${bufrin} = AMV ]; then
+		THINSM=16
+		npools=60 # a guess
+	        parallel=3  # 0
+		kinds="--target_kinds=34-35"
+            elif [ ${bufrin} = SND ]; then
+		THINSM=4
+		npools=2 # a guess
+	        parallel=1  # 0
+		kinds="--target_kinds=5-6"
+            elif [ ${bufrin} = AMSU ]; then
+		THINSM=16
+		npools=30 # a guess
+	        parallel=3  # 0
+		kinds=""
+            fi
+	    echo $THINSM   
+#-----------------------------------
+	    (set -x; \
+	     (time bufr2d4o $bufrin $npools $parallel \
+		   --camfv --basetime=$BASETIME --ens=3 --thinning=$THINSM $kinds --psplit=$tslots --deferens) \
+		 > output.$(basename $bufrin).log 2>&1 \
+		 || echo "$burfin failed" >> $errfile) &
+	    echo "$bufrin : launched with THINSM=$THINSM npools=$npools kinds=$kinds"
+            ##(set -x ; bufr2d4o $bufrin $npools $parallel --anykind --nodelete --pathodc=$(pwd)/tmpdir) > logfile 2>&1 &
+	done   # BURFINPUT FILE TYPE
+	
+	wait # for subprocesses to finish
+
+	if [[ -s $errfile ]] ; then
+	    echo "Something went wrong"
+	    cat $errfile
+	    exit 1
+	fi
+	
+	(set -x; time catalogd4o catalog.db "*.db") >> output.log 2>&1 || rc=$?
+	#
+	if [[ 0 -eq 1 ]] ; then # NOT executed since 0 != 1
+            tslots="1-13"
+            (set -x; time d4osplit parallel=1 ens=3 $tslots "*.db") >> output.log 2>&1 || rc=$?
+	fi
+
+	# Create catalog databases under each timeslot dir
+
+	for ts in {1..13}
+	do 
+            d=TS$ts
+            if [[ -d $d ]] ; then
+		cd $d
+		(set -x; time catalogd4o catalog.db "*.db") >> output.log 2>&1 || rc=$?
+		cd -
+            fi
+	done
+
+	cd - # back to previous dir
+	##
+	echo "END UTC" $UTC
+    done
+    #    
+done
+#
